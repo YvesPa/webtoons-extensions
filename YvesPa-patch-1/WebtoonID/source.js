@@ -5016,7 +5016,7 @@ var _Sources = (() => {
   // src/Webtoon.ts
   var BASE_URL_XX = "https://www.webtoons.com";
   var MOBILE_URL_XX = "https://m.webtoons.com";
-  var BASE_VERSION = "1.3.1";
+  var BASE_VERSION = "1.3.2";
   var getExportVersion = (EXTENSION_VERSION) => {
     return BASE_VERSION.split(".").map((x, index) => Number(x) + Number(EXTENSION_VERSION.split(".")[index])).join(".");
   };
