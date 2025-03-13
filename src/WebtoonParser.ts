@@ -61,7 +61,7 @@ export class WebtoonParser {
     }
 
     parseDetailsThumbnail($: CheerioAPI): string {
-        return $('#content > div.cont_box > div.detail_body').attr('style')?.match(/url\((.*?)\)/)?.[1] ?? ''
+        return $('#content > div.cont_box > div.detail_body').attr('style')?.match(/url\('(.*?)'\)/)?.[1] ?? ''
     }
     
     parseCanvasDetailsThumbnail($: CheerioAPI): string {
