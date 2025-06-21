@@ -7,32 +7,34 @@ import {
     Tag
 } from '@paperback/types'
 
-import moment from 'moment'
-import { CheerioAPI } from 'cheerio/lib/load'
-import { Cheerio } from 'cheerio/lib/cheerio'
-import { 
-    Element,
-    AnyNode
-} from 'domhandler/lib/node'
-
+import { Cheerio, CheerioAPI } from "cheerio";
+import type { Element } from "domhandler";
+import { WebtoonChaptersListDto, WebtoonChaptersElemDto } from './WebtoonDtos';
 type CheerioElement = Cheerio<Element>;
 
 export class WebtoonParser {
 
     constructor(
-        private dateFormat: string,
-        private language: string,
-        private BASE_URL: string,
-        private MOBILE_URL: string) 
+        private locale: string,
+        private BASE_URL: string) 
     { }
 
     parseDetails($: CheerioAPI, mangaId: string): SourceManga {
-        const detailElement = $('#content > div.cont_box > div.detail_header > div.info')
-        const infoElement = $('#_asideDetail') as CheerioElement
+        const detailElement = $(
+            "#wrap > #container > #content > div.cont_box > div.detail_header > div.info",
+        );
+        const infoElement = $("#_asideDetail") as CheerioElement;
+        const isCanvas = mangaId.startsWith("/canvas");
 
-        const [image, title] = mangaId.startsWith('canvas') 
-            ? [this.parseCanvasDetailsThumbnail($), detailElement.find('h3').text().trim()]
-            : [this.parseDetailsThumbnail($), detailElement.find('h1').text().trim()]
+        const [image, title] = isCanvas
+            ? [
+                  this.parseCanvasDetailsThumbnail($),
+                  detailElement.find("h3").text().trim(),
+              ]
+            : [
+                  this.parseDetailsThumbnail($),
+                  detailElement.find("h1").text().trim(),
+              ];
 
         return App.createSourceManga({
             id: mangaId,
@@ -61,30 +63,29 @@ export class WebtoonParser {
     }
 
     parseDetailsThumbnail($: CheerioAPI): string {
-        return $('#content > div.cont_box > div.detail_body').attr('style')?.match(/url\('(.*?)'\)/)?.[1] ?? ''
+        const thumb =
+            $("#wrap > #container > #content > div.detail_bg")
+                .attr("style")
+                ?.match(/url\('(.*?)'\)/)?.[1] ?? "";
+        const meta = $("meta[property='og:image']").attr("content") ?? "";
+        return meta ?? thumb;
     }
     
     parseCanvasDetailsThumbnail($: CheerioAPI): string {
-        return $('#content > div.cont_box span.thmb > img').attr('src') ?? ''
+        return $("#content > div.cont_box span.thmb > img").attr("src") ?? "";
     }
 
-    parseChaptersList($: CheerioAPI): Chapter[] {
-        return $('ul#_episodeList > li[id*=episode]')
-            .toArray()
-            .map(elem => this.parseChapter($(elem)))
+    parseChaptersList(dto: WebtoonChaptersListDto): Chapter[] {
+        return dto.episodeList.map(elem => this.parseChapter(elem));
     }
 
-    parseChapter(elem: CheerioElement): Chapter {
+    parseChapter(elem: WebtoonChaptersElemDto): Chapter {
         return App.createChapter({
-            id: elem.find('a').attr('href')?.replace(this.MOBILE_URL + '/', '') ?? '',
-            name: elem.find('a > div.row > div.info > p.sub_title > span.ellipsis').text(),
-            chapNum: Number(elem.find('a > div.row > div.num').text()?.substring(1)),
-            time: this.parseDate(elem.find('a > div.row > div.info > div.sub_info > span.date').text())
-        })
-    }
-
-    parseDate(date: string) : Date{
-        return new Date( moment(date, this.dateFormat, this.language).toDate() )
+            id: elem.viewerLink.replace(`/${this.locale}/`,""),
+            name: elem.episodeTitle,
+            chapNum: Number(elem.episodeNo),
+            time: new Date(elem.exposureDateMillis),
+        });
     }
   
     parseChapterDetails($: CheerioAPI, mangaId: string, chapterId: string): ChapterDetails {
@@ -96,25 +97,30 @@ export class WebtoonParser {
     }
 
     parsePopularTitles($: CheerioAPI): PartialSourceManga[] {
-        return $('div#content div.NE\\=a\\:tnt li a')
+        return $('div#content div.webtoon_list_wrap ul.webtoon_list li a')
             .toArray()
-            .filter(elem => $(elem).find('p.subj'))
+            .filter(elem => $(elem).find('strong.title'))
             .map(elem => this.parseMangaFromElement($(elem)))
     }
 
     parseTodayTitles($: CheerioAPI, allTitles: boolean): PartialSourceManga[] {
-        const mangas: PartialSourceManga[] = []
+        const mangas: PartialSourceManga[] = [];
 
-        const date = moment().locale('en').format('dddd').toUpperCase()
-        const list = $(`div#dailyList div.daily_section._list_${date} li a.daily_card_item`)
-        for(let i = 0; i <= list.length && (allTitles || mangas.length < 10); i++){
-            if($(list[i]).find('p.subj'))
-                mangas.push(this.parseMangaFromElement($(list[i])))
+        const list = $(
+            `div#content div.webtoon_list_wrap ul.webtoon_list li a`,
+        );
+        for (
+            let i = 0;
+            i <= list.length - 1 && (allTitles || mangas.length < 10);
+            i++
+        ) {
+            if ($(list[i]).find("strong.title"))
+                mangas.push(this.parseMangaFromElement($(list[i])));
         }
 
-        return mangas
+        return mangas;
     }
-
+/*
     parseOngoingTitles($: CheerioAPI, allTitles: boolean): PartialSourceManga[] {
         const mangas: PartialSourceManga[] = []
         let maxChild = 0
@@ -125,7 +131,7 @@ export class WebtoonParser {
 
         for (let i = 1; i <= maxChild; i++) {
             if(!allTitles && mangas.length >= 14) return mangas
-            $('div#dailyList > div li:nth-child(' + i + ') a.daily_card_item').each((_ : number, elem: AnyNode) => {
+            $('div#dailyList > div li:nth-child(' + i + ') a.daily_card_item').each((_ : number, elem: any) => {
                 if ($(elem).find('p.subj'))
                     mangas.push(this.parseMangaFromElement($(elem as Element)))
             })
@@ -145,7 +151,7 @@ export class WebtoonParser {
 
         return mangas
     }
-
+*/
     parseCanvasRecommendedTitles($: CheerioAPI): PartialSourceManga[] {
         return $('#recommendArea li.rolling-item')
             .toArray()
@@ -170,7 +176,7 @@ export class WebtoonParser {
     parseMangaFromElement(elem: CheerioElement): PartialSourceManga {
         return App.createPartialSourceManga({
             mangaId: elem.attr('href')?.replace(this.BASE_URL + '/', '') ?? '',
-            title: elem.find('p.subj').text(),
+            title: elem.find('strong.title').text(),
             image: elem.find('img').attr('src') ?? ''
         })
     }
@@ -178,7 +184,7 @@ export class WebtoonParser {
     parseCanvasFromElement(elem: CheerioElement): PartialSourceManga {
         return App.createPartialSourceManga({
             mangaId: elem.attr('href')?.replace(this.BASE_URL + '/', '') ?? '',
-            title: elem.find('p.subj').text(),
+            title: elem.find('strong.title').text(),
             image: elem.find('img').attr('src') ?? '',
             subtitle: 'Canvas'
         })
@@ -186,7 +192,7 @@ export class WebtoonParser {
 
     parseSearchResults($: CheerioAPI, canvas_wanted: boolean): PagedResults {
         const items: PartialSourceManga[] = []
-        items.push(...$('#content > div.card_wrap.search li a.card_item')
+        items.push(...$('#content > div.webtoon_list_wrap ul li a._card_item')
             .toArray()
             .map(elem => this.parseMangaFromElement($(elem))))
 
@@ -202,13 +208,13 @@ export class WebtoonParser {
     }
     
     parseGenres($: CheerioAPI): Tag[]{
-        return  $('#content ul._genre li')
+        return  $('#content > div#genre_wrap > div.snb_inner > ul li')
             .toArray()
             .map(elem => this.parseTagFromElement($(elem)))
     }
     
     parseCanvasGenres($: CheerioAPI): Tag[]{
-        return $('#content ul.challenge li')
+        return $('#content > div#genre_wrap > div.snb_inner > ul li')
             .toArray()
             .filter(elem => $(elem).attr('data-genre') && $(elem).attr('data-genre') !== 'ALL')
             .map(elem => this.parseCanvasTagFromElement($(elem)))
@@ -216,7 +222,7 @@ export class WebtoonParser {
 
     parseTagFromElement(elem: CheerioElement): Tag {
         return App.createTag({
-            id: elem.attr('data-genre') ?? '',
+            id: elem.find('a').attr('data-genre') ?? '',
             label: elem.find('a').text().trim()
         })
     }
@@ -230,7 +236,7 @@ export class WebtoonParser {
 
     parseTagResults($: CheerioAPI): PagedResults {
         return App.createPagedResults({
-            results: $('#content > div.card_wrap ul.card_lst li a')
+            results: $("#content > div.webtoon_list_wrap ul li a")
                 .toArray()
                 .map(elem => this.parseMangaFromElement($(elem)))
         })

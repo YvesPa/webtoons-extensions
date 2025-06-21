@@ -23,16 +23,17 @@ import {
 } from '@paperback/types'
 
 import { WebtoonParser } from './WebtoonParser'
-import { CheerioAPI } from 'cheerio/lib/load'
+import { CheerioAPI } from "cheerio";
 import { 
     configSettings, 
     getCanvasWanted
 } from './WebtoonSettings'
+import { WebtoonDto } from './WebtoonDtos'
 
 export const BASE_URL_XX = 'https://www.webtoons.com'
 export const MOBILE_URL_XX = 'https://m.webtoons.com'
 
-const BASE_VERSION = '1.3.2'
+const BASE_VERSION = '1.4.0'
 export const getExportVersion = (EXTENSION_VERSION: string): string => {
     return BASE_VERSION.split('.').map((x, index) => Number(x) + Number(EXTENSION_VERSION.split('.')[index])).join('.')
 }
@@ -58,14 +59,12 @@ export abstract class Webtoon implements SearchResultsProviding, MangaProviding,
     constructor(
         private cheerio: CheerioAPI,
         private LOCALE: string,
-        DATE_FORMAT: string,
-        LANGUAGE: string,
         private BASE_URL: string,
         private MOBILE_URL: string,
         private HAVE_TRENDING: boolean) 
     { 
         this.stateManager = App.createSourceStateManager()
-        this.parser = new WebtoonParser(DATE_FORMAT, LANGUAGE, BASE_URL, MOBILE_URL) 
+        this.parser = new WebtoonParser(LOCALE, BASE_URL) 
         this.cookies = 
         [
             App.createCookie({ name: 'ageGatePass', value: 'true', domain: BASE_URL_XX }),
@@ -107,6 +106,19 @@ export abstract class Webtoon implements SearchResultsProviding, MangaProviding,
         const $ = this.cheerio.load(response.data as string)
         return parseMethods.call(this.parser, $)
     }
+    
+    async ExecApiRequest<TDto, T>(
+        infos: { url: string, headers?: Record<string, string>, param?: string},
+        parseMethods: (_: TDto) => T) :Promise<T>
+    {                
+        const request = App.createRequest({ ...infos, method: 'GET'})
+        const response = await this.requestManager.schedule(request, 1)
+        const rootDto = JSON.parse(response.data as string) as WebtoonDto;
+        if (rootDto?.success !== true)
+            throw new Error();
+        const dto = rootDto.result as TDto;
+        return parseMethods.call(this.parser, dto);
+    }
 
     getMangaShareUrl(mangaId: string): string { return `${this.BASE_URL}/${mangaId}` }
 
@@ -117,12 +129,18 @@ export abstract class Webtoon implements SearchResultsProviding, MangaProviding,
     }
 
     getChapters(mangaId: string): Promise<Chapter[]> {
-        return this.ExecRequest(
-            { 
-                url: `${this.MOBILE_URL}/${mangaId}`, 
-                headers: { 'Referer': this.MOBILE_URL} 
-            }
-            , this.parser.parseChaptersList)
+        const titleId = mangaId.match(/title_no=([^&]*)&?/)?.[1] ?? '';
+        const isCanvas = mangaId.includes("/canvas/");
+        const segment = isCanvas ? "canvas" : "webtoon";
+
+        return this.ExecApiRequest(
+            {
+                url: `${MOBILE_URL_XX}/api/v1/${segment}/${titleId}/episodes`,
+                param: this.paramsToString({ pageSize: 99999 }),
+                headers: { referer: this.MOBILE_URL },
+            },
+            this.parser.parseChaptersList,
+        );
     }
 
     getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
@@ -142,7 +160,7 @@ export abstract class Webtoon implements SearchResultsProviding, MangaProviding,
             { url: `${this.BASE_URL}/dailySchedule` }, 
             $ => this.parser.parseTodayTitles($, allTitles))
     }
-
+/*
     getOngoingTitles(allTitles: boolean): Promise<PartialSourceManga[]> {
         return this.ExecRequest(
             { url: `${this.BASE_URL}/dailySchedule` }, 
@@ -154,7 +172,7 @@ export abstract class Webtoon implements SearchResultsProviding, MangaProviding,
             { url: `${this.BASE_URL}/dailySchedule` }, 
             $ => this.parser.parseCompletedTitles($, allTitles))
     }
-
+*/
     getCanvasRecommendedTitles(): Promise<PartialSourceManga[]> {
         return this.ExecRequest(
             { url: `${this.BASE_URL}/canvas` }, 
@@ -232,7 +250,7 @@ export abstract class Webtoon implements SearchResultsProviding, MangaProviding,
                     containsMoreItems: true,
                     type: HomeSectionType.singleRowNormal
                 })
-            },
+            },/*
             {
                 request: this.getOngoingTitles(false),
                 section: App.createHomeSection({
@@ -250,7 +268,7 @@ export abstract class Webtoon implements SearchResultsProviding, MangaProviding,
                     containsMoreItems: true,
                     type: HomeSectionType.singleRowNormal
                 })
-            }
+            }*/
         ])
 
         if (await getCanvasWanted(this.stateManager))
@@ -320,14 +338,14 @@ export abstract class Webtoon implements SearchResultsProviding, MangaProviding,
             case 'today':
                 items = await this.getTodayTitles(true)
                 break
-
+            /*
             case 'ongoing':
                 items = await this.getOngoingTitles(true)
                 break
             
             case 'completed':
                 items = await this.getCompletedTitles(true)
-                break
+                break*/
 
             case 'canvas_popular':
                 newMetadata.page += 1
