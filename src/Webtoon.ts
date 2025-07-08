@@ -33,7 +33,7 @@ import { WebtoonDto } from './WebtoonDtos'
 export const BASE_URL_XX = 'https://www.webtoons.com'
 export const MOBILE_URL_XX = 'https://m.webtoons.com'
 
-const BASE_VERSION = '1.4.0'
+const BASE_VERSION = '1.4.1'
 export const getExportVersion = (EXTENSION_VERSION: string): string => {
     return BASE_VERSION.split('.').map((x, index) => Number(x) + Number(EXTENSION_VERSION.split('.')[index])).join('.')
 }
@@ -92,7 +92,29 @@ export abstract class Webtoon implements SearchResultsProviding, MangaProviding,
 
         }
     });
+
+    apiRequestManager = App.createRequestManager({
+        requestsPerSecond: 9/11,
+        requestTimeout: 20000,
+        interceptor: {
+            interceptRequest: async (request: Request): Promise<Request> => {
+                request.headers = {
+                    ...(request.headers ?? {}),
+                    'Referer': request.headers?.Referer ?? `${this.BASE_URL}/`,
+                    'user-agent': await this.requestManager.getDefaultUserAgent()
+                }
+                request.cookies = this.cookies
+
+                return request
+            },
+            interceptResponse: async (response: Response): Promise<Response> => {
+                return response
+            }
+
+        }
+    });
     
+
     async getSourceMenu(): Promise<DUISection> {
         return configSettings(this.stateManager)
     }
@@ -112,7 +134,7 @@ export abstract class Webtoon implements SearchResultsProviding, MangaProviding,
         parseMethods: (_: TDto) => T) :Promise<T>
     {                
         const request = App.createRequest({ ...infos, method: 'GET'})
-        const response = await this.requestManager.schedule(request, 1)
+        const response = await this.apiRequestManager.schedule(request, 1)
         const rootDto = JSON.parse(response.data as string) as WebtoonDto;
         if (rootDto?.success !== true)
             throw new Error();
