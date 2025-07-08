@@ -951,7 +951,7 @@ var _Sources = (() => {
   // src/Webtoon.ts
   var BASE_URL_XX = "https://www.webtoons.com";
   var MOBILE_URL_XX = "https://m.webtoons.com";
-  var BASE_VERSION = "1.4.0";
+  var BASE_VERSION = "1.4.1";
   var getExportVersion = (EXTENSION_VERSION) => {
     return BASE_VERSION.split(".").map((x, index) => Number(x) + Number(EXTENSION_VERSION.split(".")[index])).join(".");
   };
@@ -993,6 +993,24 @@ var _Sources = (() => {
           }
         }
       });
+      this.apiRequestManager = App.createRequestManager({
+        requestsPerSecond: 9 / 11,
+        requestTimeout: 2e4,
+        interceptor: {
+          interceptRequest: async (request) => {
+            request.headers = {
+              ...request.headers ?? {},
+              "Referer": request.headers?.Referer ?? `${this.BASE_URL}/`,
+              "user-agent": await this.requestManager.getDefaultUserAgent()
+            };
+            request.cookies = this.cookies;
+            return request;
+          },
+          interceptResponse: async (response) => {
+            return response;
+          }
+        }
+      });
       this.paramsToString = (params) => {
         return "?" + Object.keys(params).map((key) => `${key}=${params[key]}`).join("&");
       };
@@ -1014,7 +1032,7 @@ var _Sources = (() => {
     }
     async ExecApiRequest(infos, parseMethods) {
       const request = App.createRequest({ ...infos, method: "GET" });
-      const response = await this.requestManager.schedule(request, 1);
+      const response = await this.apiRequestManager.schedule(request, 1);
       const rootDto = JSON.parse(response.data);
       if (rootDto?.success !== true)
         throw new Error();
